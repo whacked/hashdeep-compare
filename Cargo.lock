@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "file-compare"
+name = "hashdeep-compare"
 version = "0.1.0"

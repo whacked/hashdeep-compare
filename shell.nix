@@ -12,6 +12,8 @@ in helpers.mkShell [
   ];
 
   shellHook = ''
+    alias compare='cargo run $*'
+  '' + ''
     echo-shortcuts ${__curPos.file}
   '';  # join strings with +
 }
