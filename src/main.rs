@@ -16,18 +16,26 @@ struct HashdeepLine {
 }
 
 impl HashdeepLine {
-    fn new(line: &str) -> HashdeepLine {
+    fn new(line: &str, fields: &Vec<String>) -> HashdeepLine {
         let mut hashdeep_line = HashdeepLine {
             size: String::new(),
             md5: String::new(),
             sha256: String::new(),
             filename: String::new(),
         };
-        let mut line_iter = line.split(",");
-        hashdeep_line.size = line_iter.next().unwrap().to_string();
-        hashdeep_line.md5 = line_iter.next().unwrap().to_string();
-        hashdeep_line.sha256 = line_iter.next().unwrap().to_string();
-        hashdeep_line.filename = line_iter.next().unwrap().to_string();
+        let mut line_iter = line.splitn(fields.len(), ",").map(|s| s.to_string());
+        // assign fields to the struct in the order given in fields
+        for field in fields {
+            if field == "size" {
+                hashdeep_line.size = line_iter.next().unwrap().to_string();
+            } else if field == "md5" {
+                hashdeep_line.md5 = line_iter.next().unwrap().to_string();
+            } else if field == "sha256" {
+                hashdeep_line.sha256 = line_iter.next().unwrap().to_string();
+            } else if field == "filename" {
+                hashdeep_line.filename = line_iter.next().unwrap().to_string();
+            }
+        }
         hashdeep_line
     }
 }
@@ -42,6 +50,7 @@ fn read_hashdeep_file_to_vector(path: &str) -> Vec<HashdeepLine> {
     let mut hashdeep_lines: Vec<HashdeepLine> = Vec::new();
     let file = File::open(path).unwrap();
     let reader = BufReader::new(file);
+    let mut fields: Vec<String> = Vec::new();
 
     for (index, line) in reader.lines().enumerate() {
         let line = line.unwrap();
@@ -52,10 +61,12 @@ fn read_hashdeep_file_to_vector(path: &str) -> Vec<HashdeepLine> {
                 std::process::exit(1);
             }
         }  else if index == 1 {
-            if !line.starts_with("%%%% size,md5,sha256,filename") {
+            if !line.starts_with("%%%% size,md5") {
                 println!("{} is not a hashdeep file: line 2 must be hashdeep format header", path);
                 std::process::exit(1);
             }
+            // remove the %%%%
+            fields = line.trim_start_matches("%%%% ").split(",").map(|s| s.to_string()).collect();
         } else if index == 2 {
             // line must contain invocation path
             if !line.starts_with("## Invoked from: ") {
@@ -75,10 +86,7 @@ fn read_hashdeep_file_to_vector(path: &str) -> Vec<HashdeepLine> {
                 std::process::exit(1);
             }
         } else {
-            // if index < 10 {
-            //     println!("PARSING LINE: {}", line);
-            // }
-            let hashdeep_line = HashdeepLine::new(&line);
+            let hashdeep_line = HashdeepLine::new(&line, &fields);
             hashdeep_lines.push(hashdeep_line);
         }
     }
@@ -102,7 +110,7 @@ struct CompareStats {
  * this function takes 2 hashmaps of HashdeepLine records
  * and performs a forward comparison of their contents
  */
-fn compare_hashdeep_hashmaps(base_map: &HashMap<String, HashdeepLine>, comp_map: &HashMap<String, HashdeepLine>) {
+fn compare_hashdeep_hashmaps(base_map: &HashMap<String, HashdeepLine>, comp_map: &HashMap<String, HashdeepLine>) -> Result<CompareStats, String> {
     let mut summary_stats = CompareStats {
         not_in_base: 0,
         different_size: 0,
@@ -126,17 +134,18 @@ fn compare_hashdeep_hashmaps(base_map: &HashMap<String, HashdeepLine>, comp_map:
                 // println!("{:width$}: {} {} {}", index, &comp_hash[0..8], comp_record.filename, "OK", width=padding_width);
                 summary_stats.same_size += 1;
             } else {
-                println!("{:width$}: {} {} {}", index, "DIFFERENT!", &comp_hash[0..8], comp_record.filename, width=padding_width);
                 summary_stats.different_size += 1;
             }
         }
     }
 
-    println!("done; compared {} records", comp_map.len());
+    println!("\ndone; compared {} records", comp_map.len());
     // print the summary stats
     println!("{} records not in source", summary_stats.not_in_base);
     println!("{} records different size", summary_stats.different_size);
     println!("{} records equivalent", summary_stats.same_size);
+
+    return Ok(summary_stats);
 }
 
 /**
@@ -147,7 +156,7 @@ fn compare_hashdeep_hashmaps(base_map: &HashMap<String, HashdeepLine>, comp_map:
 fn hashdeep_lines_to_hashmap(hashdeep_lines: Vec<HashdeepLine>) -> HashMap<String, HashdeepLine> {
     let mut hashdeep_hashmap: HashMap<String, HashdeepLine> = HashMap::new();
     for hashdeep_line in hashdeep_lines {
-        hashdeep_hashmap.insert(hashdeep_line.sha256.clone(), hashdeep_line);
+        hashdeep_hashmap.insert(hashdeep_line.md5.clone(), hashdeep_line);
     }
     hashdeep_hashmap
 }
@@ -177,7 +186,7 @@ fn main() {
         false
     };
 
-    println!("file-compare running for\n- {}\n- {}", base_file, comp_file);
+    println!("hashdeep-compare running for\n- {}\n- {}", base_file, comp_file);
 
     // bail if the input files don't exist
     if !Path::new(&base_file).exists() {
@@ -208,4 +217,6 @@ fn main() {
         println!("now checking whether all keys from\n(TARGET) {} exist in\n(SOURCE) {}...", comp_file, base_file);
         compare_hashdeep_hashmaps(&base_map, &comp_map);
     }
+
+    println!("main function complete");
 }
